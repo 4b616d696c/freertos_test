@@ -165,9 +165,13 @@ int main(void)
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
 
+  // #######
+  // comment out senderHandle or sender2Handle (sender is 5s buffered, sender2 is immediate)
+  // #######
+
   /* Create the thread(s) */
   /* creation of sender */
-  senderHandle = osThreadNew(StartSender, NULL, &sender_attributes);
+  //senderHandle = osThreadNew(StartSender, NULL, &sender_attributes);
 
   /* creation of sender2 */
   sender2Handle = osThreadNew(StartSender2, NULL, &sender2_attributes);
@@ -188,7 +192,7 @@ int main(void)
       .priority = (osPriority_t)osPriorityNormal,
     };
 
-      TaskParams* params = pvPortMalloc(sizeof(TaskParams));
+      TaskParams* params = pvPortMalloc(sizeof(TaskParams)); // arguments have to be on heap
       params->id = i;
       params->period = periods[i];
 
@@ -303,7 +307,7 @@ static void MX_TIM2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN TIM2_Init 2 */
-  __HAL_TIM_SET_COUNTER(&htim2, 0);
+  __HAL_TIM_SET_COUNTER(&htim2, 0); // ensure counter is zero
   /* USER CODE END TIM2_Init 2 */
 
 }
