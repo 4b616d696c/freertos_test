@@ -63,17 +63,16 @@ TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart2;
 
-/* Definitions for sender */
-TaskHandle_t senderHandle;
-/* Definitions for sender2 */
-TaskHandle_t sender2Handle;
-/* Definitions for longAssTask */
-TaskHandle_t longAssTaskHandle;
-/* Definitions for messageQueue */
-QueueHandle_t messageQueueHandle;
 /* USER CODE BEGIN PV */
-SemaphoreHandle_t uartMutex;
+TaskHandle_t senderHandle;
+TaskHandle_t sender2Handle;
+TaskHandle_t longAssTaskHandle;
+
 TaskHandle_t tasks[N_TASKS];
+
+QueueHandle_t messageQueueHandle;
+SemaphoreHandle_t uartMutex;
+
 uint32_t periods[] = { 200, 500, 5000 };
 /* USER CODE END PV */
 
@@ -159,12 +158,12 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of sender */
-  xTaskCreate(StartSender, "sender", 128 * 4, NULL, tskIDLE_PRIORITY, &senderHandle);
+  xTaskCreate(StartSender, "sender", 128, NULL, 10, &senderHandle);
 
-  xTaskCreate(StartSender2, "sender2", 128 * 4, NULL, tskIDLE_PRIORITY, &sender2Handle);
+  //xTaskCreate(StartSender2, "sender2", 128, NULL, 10, &sender2Handle);
 
   /* creation of longAssTask */
-  xTaskCreate(StartLongAssTask, "longass", 128 * 4, NULL, tskIDLE_PRIORITY, &longAssTaskHandle);
+  xTaskCreate(StartLongAssTask, "longass", 128, NULL, 10, &longAssTaskHandle);
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   for (int i = 0; i < N_TASKS; i++)
@@ -173,10 +172,11 @@ int main(void)
     sprintf(name, "task%d", i);
 
     TaskParams* params = pvPortMalloc(sizeof(TaskParams));
+    
     params->id = i;
     params->period = periods[i];
 
-    xTaskCreate(StartTask, name, 128 * 4, params, tskIDLE_PRIORITY, &tasks[i]);
+    xTaskCreate(StartTask, name, 128, params, 10, &tasks[i]);
   }
   /* USER CODE END RTOS_THREADS */
 
