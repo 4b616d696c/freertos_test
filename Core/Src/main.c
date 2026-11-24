@@ -18,12 +18,14 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,33 +61,15 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart2;
 
 /* Definitions for sender */
-osThreadId_t senderHandle;
-const osThreadAttr_t sender_attributes = {
-  .name = "sender",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
+TaskHandle_t senderHandle;
 /* Definitions for sender2 */
-osThreadId_t sender2Handle;
-const osThreadAttr_t sender2_attributes = {
-  .name = "sender2",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityLow,
-};
+TaskHandle_t sender2Handle;
 /* Definitions for longAssTask */
-osThreadId_t longAssTaskHandle;
-const osThreadAttr_t longAssTask_attributes = {
-  .name = "longAssTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityLow,
-};
+TaskHandle_t longAssTaskHandle;
 /* Definitions for messageQueue */
-osMessageQueueId_t messageQueueHandle;
-const osMessageQueueAttr_t messageQueue_attributes = {
-  .name = "messageQueue"
-};
+QueueHandle_t messageQueueHandle;
 /* USER CODE BEGIN PV */
-osThreadId_t tasks[N_TASKS];
+TaskHandle_t tasks[N_TASKS];
 uint32_t periods[] = { 200, 500, 5000 };
 /* USER CODE END PV */
 
@@ -143,7 +127,7 @@ int main(void)
   /* USER CODE END 2 */
 
   /* Init scheduler */
-  osKernelInitialize();
+  //osKernelInitialize();
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -159,7 +143,8 @@ int main(void)
 
   /* Create the queue(s) */
   /* creation of messageQueue */
-  messageQueueHandle = osMessageQueueNew (128, sizeof(Message), &messageQueue_attributes);
+  //messageQueueHandle = osMessageQueueNew (128, sizeof(Message), &messageQueue_attributes);
+  messageQueueHandle = xQueueCreate(128, sizeof(Message));
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -172,13 +157,14 @@ int main(void)
   /* Create the thread(s) */
   /* creation of sender */
   //senderHandle = osThreadNew(StartSender, NULL, &sender_attributes);
+  xTaskCreate(StartSender, "sender", 128 * 4, NULL, tskIDLE_PRIORITY, &senderHandle);
 
-  /* creation of sender2 */
-  sender2Handle = osThreadNew(StartSender2, NULL, &sender2_attributes);
+  //sender2Handle = osThreadNew(StartSender2, NULL, &sender2_attributes);
+  xTaskCreate(StartSender2, "sender2", 128 * 4, NULL, tskIDLE_PRIORITY, &sender2Handle);
 
   /* creation of longAssTask */
-  longAssTaskHandle = osThreadNew(StartLongAssTask, NULL, &longAssTask_attributes);
-
+  //longAssTaskHandle = osThreadNew(StartLongAssTask, NULL, &longAssTask_attributes);
+  xTaskCreate(StartLongAssTask, "longass", 128 * 4, NULL, tskIDLE_PRIORITY, &longAssTaskHandle);
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   for (int i = 0; i < N_TASKS; i++)
@@ -186,17 +172,11 @@ int main(void)
     char name[10];
     sprintf(name, "task%d", i);
 
-    const osThreadAttr_t attr = {
-      .name = name,
-      .stack_size = 128 * 4,
-      .priority = (osPriority_t)osPriorityNormal,
-    };
+    TaskParams* params = pvPortMalloc(sizeof(TaskParams));
+    params->id = i;
+    params->period = periods[i];
 
-      TaskParams* params = pvPortMalloc(sizeof(TaskParams)); // arguments have to be on heap
-      params->id = i;
-      params->period = periods[i];
-
-    tasks[i] = osThreadNew(StartTask, params, &attr);
+    xTaskCreate(StartTask, name, 128 * 4, params, tskIDLE_PRIORITY, &tasks[i]);
   }
   /* USER CODE END RTOS_THREADS */
 
@@ -205,7 +185,7 @@ int main(void)
   /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
-  osKernelStart();
+  vTaskStartScheduler();
 
   /* We should never get here as control is now taken by the scheduler */
 
@@ -397,14 +377,13 @@ void StartTask(void *params)
     Message msg;
     msg.task = p->id;
     msg.timer = __HAL_TIM_GET_COUNTER(&htim2);
-
-    osStatus_t s = osMessageQueuePut(messageQueueHandle, &msg, 1, 0);
-    if (s != osOK)
+    BaseType_t s = xQueueSend(messageQueueHandle, &msg, 0);
+    if (s != pdPASS)
     {
       // idk something
     }
 
-    osDelay(MS2TICK(p->period));
+    vTaskDelay(MS2TICK(p->period));
   }
 }
 /* USER CODE END 4 */
@@ -423,11 +402,11 @@ void StartSender(void *argument)
   for(;;)
   {
     int msg_counter = 0;
-    while (osMessageQueueGetCount(messageQueueHandle) > 0)
+    while (uxQueueMessagesWaiting(messageQueueHandle) > 0)
     {
       Message msg;
-      osStatus_t s = osMessageQueueGet(messageQueueHandle, &msg, NULL, 0);
-      if (s != osOK)
+      BaseType_t s = xQueueReceive(messageQueueHandle, &msg, 0);
+      if (s != pdPASS)
         continue;
 
       char str[60];
@@ -437,7 +416,7 @@ void StartSender(void *argument)
       msg_counter++;
     }
 
-    osDelay(MS2TICK(5000));
+    vTaskDelay(MS2TICK(5000));
   }
   /* USER CODE END 5 */
 }
@@ -455,17 +434,14 @@ void StartSender2(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    if (osMessageQueueGetCount(messageQueueHandle) > 0)
-    {
-      Message msg;
-      osStatus_t s = osMessageQueueGet(messageQueueHandle, &msg, NULL, 0);
-      if (s != osOK)
-        continue;
+    Message msg;
+    BaseType_t s = xQueueReceive(messageQueueHandle, &msg, portMAX_DELAY);
+    if (s != pdPASS)
+      continue;
 
-      char str[60];
-      sprintf(str, "Task: %lums, timer: %lums.\n", periods[msg.task], msg.timer);
-      HAL_UART_Transmit(&huart2, (uint8_t*)str, strlen(str), HAL_MAX_DELAY);
-    }
+    char str[60];
+    sprintf(str, "Task: %lums, timer: %lums.\n", periods[msg.task], msg.timer);
+    HAL_UART_Transmit(&huart2, (uint8_t*)str, strlen(str), HAL_MAX_DELAY);
   }
   /* USER CODE END StartSender2 */
 }
@@ -487,7 +463,7 @@ void StartLongAssTask(void *argument)
   for(;;)
   {
     HAL_UART_Transmit(&huart2, (uint8_t*)msgStart, strlen(msgStart), HAL_MAX_DELAY);
-    osDelay(3000); // long operation or something
+    vTaskDelay(3000); // long operation or something
     HAL_UART_Transmit(&huart2, (uint8_t*)msgEnd, strlen(msgEnd), HAL_MAX_DELAY);
   }
   /* USER CODE END StartLongAssTask */
