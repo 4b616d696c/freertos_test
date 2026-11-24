@@ -24,8 +24,11 @@
 #include <stdio.h>
 #include <string.h>
 #include "FreeRTOS.h"
+#include "portmacro.h"
+#include "stm32f3xx_hal_tim.h"
 #include "task.h"
 #include "queue.h"
+#include "semphr.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -69,6 +72,7 @@ TaskHandle_t longAssTaskHandle;
 /* Definitions for messageQueue */
 QueueHandle_t messageQueueHandle;
 /* USER CODE BEGIN PV */
+SemaphoreHandle_t uartMutex;
 TaskHandle_t tasks[N_TASKS];
 uint32_t periods[] = { 200, 500, 5000 };
 /* USER CODE END PV */
@@ -84,6 +88,7 @@ void StartLongAssTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 void StartTask(void* params);
+void UARTSend(const char* str);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -113,7 +118,6 @@ int main(void)
 
   /* Configure the system clock */
   SystemClock_Config();
-
   /* USER CODE BEGIN SysInit */
 
   /* USER CODE END SysInit */
@@ -134,7 +138,7 @@ int main(void)
   /* USER CODE END RTOS_MUTEX */
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
-  /* add semaphores, ... */
+  uartMutex = xSemaphoreCreateMutex();
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* USER CODE BEGIN RTOS_TIMERS */
@@ -143,7 +147,6 @@ int main(void)
 
   /* Create the queue(s) */
   /* creation of messageQueue */
-  //messageQueueHandle = osMessageQueueNew (128, sizeof(Message), &messageQueue_attributes);
   messageQueueHandle = xQueueCreate(128, sizeof(Message));
 
   /* USER CODE BEGIN RTOS_QUEUES */
@@ -156,14 +159,11 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of sender */
-  //senderHandle = osThreadNew(StartSender, NULL, &sender_attributes);
   xTaskCreate(StartSender, "sender", 128 * 4, NULL, tskIDLE_PRIORITY, &senderHandle);
 
-  //sender2Handle = osThreadNew(StartSender2, NULL, &sender2_attributes);
   xTaskCreate(StartSender2, "sender2", 128 * 4, NULL, tskIDLE_PRIORITY, &sender2Handle);
 
   /* creation of longAssTask */
-  //longAssTaskHandle = osThreadNew(StartLongAssTask, NULL, &longAssTask_attributes);
   xTaskCreate(StartLongAssTask, "longass", 128 * 4, NULL, tskIDLE_PRIORITY, &longAssTaskHandle);
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -367,6 +367,15 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void UARTSend(const char* str)
+{
+  if (xSemaphoreTake(uartMutex, portMAX_DELAY))
+  {
+    HAL_UART_Transmit(&huart2, (const uint8_t*)str, strlen(str), HAL_MAX_DELAY);
+    xSemaphoreGive(uartMutex);
+  }
+}
+
 void StartTask(void *params)
 {
   TaskParams* p = (TaskParams*)params;
@@ -411,7 +420,7 @@ void StartSender(void *argument)
 
       char str[60];
       sprintf(str, "[%d] Task: %lums, timer: %lums.\n", msg_counter, periods[msg.task], msg.timer);
-      HAL_UART_Transmit(&huart2, (uint8_t*)str, strlen(str), HAL_MAX_DELAY);
+      UARTSend(str);
 
       msg_counter++;
     }
@@ -441,7 +450,7 @@ void StartSender2(void *argument)
 
     char str[60];
     sprintf(str, "Task: %lums, timer: %lums.\n", periods[msg.task], msg.timer);
-    HAL_UART_Transmit(&huart2, (uint8_t*)str, strlen(str), HAL_MAX_DELAY);
+    UARTSend(str);
   }
   /* USER CODE END StartSender2 */
 }
@@ -462,9 +471,13 @@ void StartLongAssTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    HAL_UART_Transmit(&huart2, (uint8_t*)msgStart, strlen(msgStart), HAL_MAX_DELAY);
-    vTaskDelay(3000); // long operation or something
-    HAL_UART_Transmit(&huart2, (uint8_t*)msgEnd, strlen(msgEnd), HAL_MAX_DELAY);
+    UARTSend(msgStart);
+
+    // wait using timer 2
+    uint32_t start = __HAL_TIM_GET_COUNTER(&htim2);
+    while ((__HAL_TIM_GET_COUNTER(&htim2) - start) < 3000);
+
+    UARTSend(msgEnd);
   }
   /* USER CODE END StartLongAssTask */
 }
